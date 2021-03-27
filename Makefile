@@ -4,7 +4,7 @@ PKG := "github.com/litmuschaos/$(PROJECT_NAME)"
 all: build
 
 build: ## Build the binary file
-	@bash scripts/build.sh main.go
+	@bash scripts/build.sh main.go $(TAG)
 
 
 .PHONY: unused-package-check

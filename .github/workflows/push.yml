@@ -1,8 +1,9 @@
-name: Push-or-Release
+name: push-release-pipeline
 on:
   push:
     branches:
       - master
+      - s3-bucket
     tags-ignore:
       - '**'
   create:
@@ -23,39 +24,79 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v2
 
-      - name: gofmt check
-        run: |
-          if [ "$(gofmt -s -l . | wc -l)" -ne 0 ]
-          then
-           echo "The following files were found to be not go formatted:"
-           gofmt -s -l .
-           exit 1
-          fi
+      # - name: gofmt check
+      #   run: |
+      #     if [ "$(gofmt -s -l . | wc -l)" -ne 0 ]
+      #     then
+      #      echo "The following files were found to be not go formatted:"
+      #      gofmt -s -l .
+      #      exit 1
+      #     fi
 
-      - name: golangci-lint
-        uses: reviewdog/action-golangci-lint@v1
+      # - name: golangci-lint
+      #   uses: reviewdog/action-golangci-lint@v1
 
-      - name: unused-package check
-        run: |
-          make unused-package-check
+      # - name: unused-package check
+      #   run: |
+      #     make unused-package-check
+
+      - name: Get tag
+        shell: bash
+        run: echo "##[set-output name=branch;]$(echo ${GITHUB_REF##*/})"
+        id: tag
 
       - name: Building litmusctl
         run: |
           git checkout ${GITHUB_REF##*/}
-          make build
+          make TAG=${{ steps.tag.outputs.branch }} build
 
-      - name: Push litmusctl to repo
-        run: |
-          git config --global user.name 'litmuschaos-bot'
-          git config --global user.email 'litmuschaos-bot@users.noreply.github.com'
-          git remote -v
-          if [[ `git status --porcelain` ]]; then
-            echo "changes"
-            git add .
-            git commit -s -m "Updating litmusctl"
-            git push
-            exit 0;
-          else
-            echo "no changes"
-            exit 0;
-          fi
+      - uses: jakejarvis/s3-sync-action@master
+        with:
+          args: --acl public-read --follow-symlinks --delete
+        env:
+          AWS_S3_BUCKET: ${{ secrets.AWS_S3_BUCKET }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: 'eu-west-1'   # optional: defaults to us-east-1
+          SOURCE_DIR: platforms-${{ steps.tag.outputs.branch }} # optional: defaults to entire repository
+
+      # - name: Remove older binaries from latest directory of S3 bucket
+      #   uses: ItsKarma/aws-cli@v1.70.0
+      #   with:
+      #     # args: s3 rm s3://asset.mayadata.io/kuberactl/latest --recursive
+      #     args: s3 rm s3://${{ secrets.S}}
+      #   env:
+      #     # Make sure to add the secrets in the repo settings page
+      #     # AWS_REGION is set to us-east-1 by default
+      #     AWS_ACCESS_KEY_ID: ${{ secrets.ACCESS_KEY_ID }}
+      #     AWS_SECRET_ACCESS_KEY: ${{ secrets.SECRET_ACCESS_KEY }}
+      #     AWS_REGION: ${{ secrets.AWS_REGION}}
+
+
+      # - name: Upload Darwin_x86_64 tar to latest directory of S3 bucket
+      #   uses: ItsKarma/aws-cli@v1.70.0
+      #   with:
+      #     args: s3 cp dist/kuberactl_${{ steps.release_tag.outputs.branch }}_Darwin_x86_64.tar.gz s3://asset.mayadata.io/kuberactl/latest/kuberactl_latest_Darwin_x86_64.tar.gz --acl public-read
+      #   env:
+      #     # Make sure to add the secrets in the repo settings page
+      #     # AWS_REGION is set to us-east-1 by default
+      #     AWS_ACCESS_KEY_ID: ${{ secrets.ACCESS_KEY_ID }}
+      #     AWS_SECRET_ACCESS_KEY: ${{ secrets.SECRET_ACCESS_KEY }}
+      #     AWS_REGION: us-east-1
+
+      # # - name: Push litmusctl to repo
+      # #   run: |
+      # #     git config --global user.name 'litmuschaos-bot'
+      # #     git config --global user.email 'litmuschaos-bot@users.noreply.github.com'
+      # #     git remote -v
+      # #     if [[ `git status --porcelain` ]]; then
+      # #       echo "changes"
+      # #       git add .
+      # #       git commit -s -m "Updating litmusctl"
+      # #       git push
+      # #       exit 0;
+      # #     else
+      # #       echo "no changes"
+      # #       exit 0;
+      # #     fi
+      
